@@ -26,6 +26,15 @@ Needs Java 17+ (tested on 25). No other dependencies.
 
 <p align="center"><img src="docs/packages.png" width="800" alt="Packages view"></p>
 
+- **Kernel**: what the Linux build compiled, folder by folder (drivers, net, fs, arch, …). Each block
+  shows its Kconfig menu title, how many object files and modules (`.ko`) it produced and the
+  `CONFIG_` option that turns it on. Blue = built into the kernel image, orange = modules only,
+  yellow = both. Double-click a folder to go in (drivers → usb → …), the top block to go back.
+  Read from the kernel build folder: `.config`, the `.o` files, `modules.order`, `built-in.a`,
+  each folder's Makefile and Kconfig.
+
+<p align="center"><img src="docs/kernel.png" width="800" alt="Kernel view: drivers/"></p>
+
 Each block shows its build time (from `build/build-time.log`). The panel on the right shows
 version, licenses, dependencies, build steps, sources and so on.
 
@@ -42,7 +51,7 @@ Mouse wheel zooms, dragging empty space pans, dragging a block moves it. Keys: `
 
 ## Headless PNG
 
-    java -Djava.awt.headless=true -cp classes brblocks.BuildrootBlocks --png out.png [--packages] [--host] <folder>
+    java -Djava.awt.headless=true -cp classes brblocks.BuildrootBlocks --png out.png [--packages] [--host] [--kernel drivers/usb] <folder>
 
 ## AppImage (Ubuntu and other x86_64 Linux)
 

@@ -19,7 +19,7 @@ import java.util.prefs.Preferences;
  * The Grid: opens a Buildroot output folder and shows it as EVIA Paradigma-style blocks.
  *
  *   java -cp classes brblocks.BuildrootBlocks [folder]
- *   java -cp classes brblocks.BuildrootBlocks --png file.png [--packages] [--host] folder
+ *   java -cp classes brblocks.BuildrootBlocks --png file.png [--packages] [--host] [--kernel path] folder
  */
 public final class BuildrootBlocks extends JFrame {
     static final String NAME = "The Grid", VERSION = "1.0.0";
@@ -28,12 +28,15 @@ public final class BuildrootBlocks extends JFrame {
     private final BlockCanvas canvas = new BlockCanvas();
     private final JEditorPane details = new JEditorPane("text/html", "");
     private final JLabel status = new JLabel(" ");
-    private final JToggleButton systemBtn = new JToggleButton("System"), packagesBtn = new JToggleButton("Packages");
+    private final JToggleButton systemBtn = new JToggleButton("System"), packagesBtn = new JToggleButton("Packages"),
+            kernelBtn = new JToggleButton("Kernel");
     private final JCheckBox hostBox = new JCheckBox("Host packages"), reduceBox = new JCheckBox("Direct wires only", true);
     private final JTextField search = new JTextField(14);
     private final JProgressBar busy = new JProgressBar();
     private BrModel model;
     private Path folder;
+    private KernelModel kernel;        // read the first time the Kernel view opens
+    private String kernelPath = "";    // the source folder the Kernel view shows
 
     private BuildrootBlocks() {
         super(NAME);
@@ -49,13 +52,17 @@ public final class BuildrootBlocks extends JFrame {
         ButtonGroup bg = new ButtonGroup();
         bg.add(systemBtn);
         bg.add(packagesBtn);
+        bg.add(kernelBtn);
         systemBtn.setSelected(true);
         systemBtn.setToolTipText("Board → toolchain → bootloader, kernel, root file system → images");
         packagesBtn.setToolTipText("Every package as a block; wires go from a dependency to the package that needs it");
         systemBtn.addActionListener(e -> rebuild());
         packagesBtn.addActionListener(e -> rebuild());
+        kernelBtn.setToolTipText("What the Linux build compiled, folder by folder; double-click a folder to go in, the top block to go back");
+        kernelBtn.addActionListener(e -> rebuild());
         tb.add(systemBtn);
         tb.add(packagesBtn);
+        tb.add(kernelBtn);
         tb.addSeparator();
         hostBox.setToolTipText("Also show host-* packages (tools built to run on this computer)");
         reduceBox.setToolTipText("Hide a wire A→C when A already reaches C through other blocks");
@@ -155,6 +162,8 @@ public final class BuildrootBlocks extends JFrame {
                 try {
                     model = get();
                     folder = dir;
+                    kernel = null;
+                    kernelPath = "";
                     PREFS.put("folder", dir.toString());
                     setTitle(NAME + " — " + model.out.getParent().getFileName() + " (" + model.out + ")");
                     rebuild();
@@ -185,9 +194,45 @@ public final class BuildrootBlocks extends JFrame {
         boolean pk = packagesBtn.isSelected();
         hostBox.setEnabled(pk);
         reduceBox.setEnabled(pk);
-        canvas.setGraph(pk ? packagesGraphWired(model, hostBox.isSelected(), reduceBox.isSelected()) : systemGraphWired(model));
+        if (kernelBtn.isSelected()) {
+            canvas.setGraph(kernelGraphWired());
+        } else {
+            canvas.setGraph(pk ? packagesGraphWired(model, hostBox.isSelected(), reduceBox.isSelected()) : systemGraphWired(model));
+            updateStatus();
+        }
         find(false);
         showDetails(null);
+    }
+
+    /** Shows a kernel source folder ("" = the whole kernel). */
+    private void openKernel(String path) {
+        kernelPath = path;
+        kernelBtn.setSelected(true);
+        rebuild();
+    }
+
+    private Graph kernelGraphWired() {
+        if (kernel == null) {
+            Path dir = KernelModel.find(model);
+            if (dir == null) {
+                canvas.setEmptyText("The Linux kernel has not been built in this output folder yet");
+                return new Graph();
+            }
+            setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR));
+            try {
+                BrModel.Pkg lx = model.pkgs.get("linux");
+                kernel = KernelModel.load(dir, lx == null ? dir.getFileName().toString().substring(6) : lx.version());
+            } catch (IOException e) {
+                canvas.setEmptyText("Could not read the kernel build: " + e.getMessage());
+                return new Graph();
+            } finally {
+                setCursor(Cursor.getDefaultCursor());
+            }
+        }
+        status.setText("Linux " + kernel.version + "  ·  " + (kernelPath.isEmpty() ? "all folders" : kernelPath + "/")
+                + "  ·  " + kernel.root.objects + " objects, " + kernel.root.modules + " modules  ·  "
+                + kernel.yes + " options built in, " + kernel.mod + " as modules  ·  " + kernel.dir);
+        return kernelGraph(kernel, kernelPath, this);
     }
 
     private void find(boolean jump) {
@@ -415,7 +460,7 @@ public final class BuildrootBlocks extends JFrame {
                     + row("Device trees", dts.replace(' ', '\n')) + "</table>");
             g.link(tcN, n);
             toImages.add(n);
-            if (w != null) n.open = () -> w.openPackage("linux");
+            if (w != null) n.open = () -> w.openKernel("");
         }
 
         List<BrModel.Pkg> target = m.pkgs.values().stream()
@@ -461,6 +506,86 @@ public final class BuildrootBlocks extends JFrame {
         return g;
     }
 
+    static Color kernelColor(String kind) {
+        return switch (kind) {
+            case "modules" -> Theme.category("toolchain");   // orange
+            case "mixed" -> Theme.category("rootfs");        // yellow
+            default -> Theme.category("target");             // blue
+        };
+    }
+
+    /** One kernel source folder as a block on top, its compiled subfolders as blocks below it. */
+    static Graph kernelGraph(KernelModel k, String path, BuildrootBlocks w) {
+        Graph g = new Graph();
+        g.keepOrder = true;
+        g.maxPerRow = 6;
+        KernelModel.Dir cur = k.dirs.getOrDefault(path, k.root);
+        Graph.Node top;
+        if (cur == k.root) {
+            top = g.add(new Graph.Node("@", "KERNEL", "Linux " + k.version, Theme.category("kernel")));
+            top.meta = k.yes + " y · " + k.mod + " m";
+            List<String> outs = new ArrayList<>();
+            if (k.zImage > 0) outs.add("zImage " + BrModel.size(k.zImage));
+            if (k.vmlinux > 0) outs.add("vmlinux " + BrModel.size(k.vmlinux) + " (with debug info)");
+            top.html = "<html><body><h2>Linux " + esc(k.version) + "</h2><table>" + row("Build folder", k.dir.toString())
+                    + row("Options", k.yes + " built in (=y), " + k.mod + " as modules (=m)")
+                    + row("Compiled", k.root.objects + " object files, " + k.root.modules + " modules")
+                    + "</table>" + list("Output", outs) + list("Device trees", k.dtbs)
+                    + "<p><b>Colors</b><br>&nbsp;• blue: built into the kernel image<br>&nbsp;• orange: modules only (.ko)"
+                    + "<br>&nbsp;• yellow: both</p><p><i>Double-click a folder to go in.</i></p></body></html>";
+        } else {
+            top = g.add(new Graph.Node("@", cur.prompt.isEmpty() ? cur.kind().toUpperCase(Locale.ROOT)
+                    : cur.prompt.toUpperCase(Locale.ROOT), cur.path + "/", kernelColor(cur.kind())));
+            top.meta = cur.objects + " obj" + (cur.modules > 0 ? " · " + cur.modules + " ko" : "");
+            top.html = kernelDirHtml(k, cur) + "";
+            String up = cur.path.contains("/") ? cur.path.substring(0, cur.path.lastIndexOf('/')) : "";
+            if (w != null) top.open = () -> w.openKernel(up);
+            top.html = top.html.replace("</body>", "<p><i>Double-click to go back to "
+                    + esc(up.isEmpty() ? "the whole kernel" : up + "/") + ".</i></p></body>");
+        }
+        top.hasInput = false;
+        g.groupParent = top;
+        for (KernelModel.Dir c : cur.children) {
+            String sym = k.symbolText(c, false);
+            Graph.Node n = g.add(new Graph.Node(c.path, c.prompt.isEmpty() ? c.kind().toUpperCase(Locale.ROOT)
+                    : c.prompt.toUpperCase(Locale.ROOT), c.name + "/" + (sym.isEmpty() ? "" : "  " + sym),
+                    kernelColor(c.kind())));
+            n.meta = c.objects + " obj" + (c.modules > 0 ? " · " + c.modules + " ko" : "");
+            n.html = kernelDirHtml(k, c);
+            if (w != null && !c.children.isEmpty()) {
+                String p = c.path;
+                n.open = () -> w.openKernel(p);
+            }
+            n.hasInput = false;
+            n.level = 1;
+        }
+        return g;
+    }
+
+    private static String kernelDirHtml(KernelModel k, KernelModel.Dir d) {
+        List<String> subs = new ArrayList<>();
+        for (KernelModel.Dir c : d.children) subs.add(c.name + "/  (" + c.objects + " obj" + (c.modules > 0 ? ", " + c.modules + " ko" : "") + ")");
+        List<String> mods = new ArrayList<>();
+        collectModules(d, d.path, mods);
+        String kind = switch (d.kind()) {
+            case "modules" -> "modules only (.ko files, loaded at run time)";
+            case "mixed" -> "partly built in, partly modules";
+            default -> "built into the kernel image";
+        };
+        return "<html><body><h2>" + esc(d.path) + "/</h2><table>" + row("Menu", d.prompt) + row("Goes", kind)
+                + row("Turned on by", k.symbolText(d, true))
+                + row("Objects", d.objects + (d.ownObjects != d.objects ? " (" + d.ownObjects + " in this folder)" : ""))
+                + row("Modules", d.modules == 0 ? "" : String.valueOf(d.modules)) + "</table>"
+                + list("Subfolders", subs) + list("Modules", mods.size() > 300 ? mods.subList(0, 300) : mods)
+                + (d.children.isEmpty() ? "" : "<p><i>Double-click to go in.</i></p>") + "</body></html>";
+    }
+
+    private static void collectModules(KernelModel.Dir d, String base, List<String> out) {
+        String rel = d.path.equals(base) ? "" : d.path.substring(base.length() + 1) + "/";
+        for (String m : d.moduleNames) out.add(rel + m);
+        for (KernelModel.Dir c : d.children) collectModules(c, base, out);
+    }
+
     private Graph systemGraphWired(BrModel m) {
         return systemGraph(m, this);
     }
@@ -477,6 +602,7 @@ public final class BuildrootBlocks extends JFrame {
     public static void main(String[] args) throws Exception {
         String png = null;
         boolean pk = false, host = false;
+        String kpath = null;
         Path dir = null;
         for (int i = 0; i < args.length; i++) {
             switch (args[i]) {
@@ -484,11 +610,12 @@ public final class BuildrootBlocks extends JFrame {
                 case "--png" -> png = args[++i];
                 case "--packages" -> pk = true;
                 case "--host" -> host = true;
+                case "--kernel" -> kpath = args[++i];
                 default -> dir = Path.of(args[i]);
             }
         }
         if (png != null) {
-            snapshot(dir, png, pk, host);
+            snapshot(dir, png, pk, host, kpath);
             return;
         }
         System.setProperty("awt.useSystemAAFontSettings", "on");
@@ -504,11 +631,17 @@ public final class BuildrootBlocks extends JFrame {
     }
 
     /** Renders a diagram to a PNG without a window (for docs and checks). */
-    private static void snapshot(Path dir, String png, boolean packages, boolean host) throws Exception {
+    private static void snapshot(Path dir, String png, boolean packages, boolean host, String kpath) throws Exception {
         BrModel m = BrModel.load(dir == null ? Path.of(".") : dir, true, s -> System.err.println(s));
         BlockCanvas c = new BlockCanvas();
         c.setSize(1800, 1100);
-        c.setGraph(packages ? packagesGraph(m, host, true) : systemGraph(m));
+        if (kpath != null) {
+            Path kd = KernelModel.find(m);
+            if (kd == null) throw new IOException("no kernel build");
+            c.setGraph(kernelGraph(KernelModel.load(kd, m.pkgs.get("linux").version()), kpath, null));
+        } else {
+            c.setGraph(packages ? packagesGraph(m, host, true) : systemGraph(m));
+        }
         BufferedImage img = new BufferedImage(c.getWidth(), c.getHeight(), BufferedImage.TYPE_INT_RGB);
         Graphics2D g = img.createGraphics();
         c.paint(g);

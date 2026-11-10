@@ -189,6 +189,7 @@ final class BlockCanvas extends JComponent {
         // wires: faded ones first, lit ones on top
         Set<Graph.Node> upAll = new HashSet<>(up), downAll = new HashSet<>(down);
         if (selected != null) { upAll.add(selected); downAll.add(selected); }
+        if (graph.groupParent != null) paintGroup(g);
         for (int pass = 0; pass < 2; pass++) {
             for (Graph.Edge e : graph.edges) {
                 boolean isUp = focus && upAll.contains(e.from()) && upAll.contains(e.to());
@@ -206,12 +207,39 @@ final class BlockCanvas extends JComponent {
         }
 
         for (Graph.Node n : graph.nodes) {
-            boolean related = !focus || n == selected || up.contains(n) || down.contains(n) || matches.contains(n);
+            boolean related = !focus || graph.groupParent != null || n == selected || up.contains(n) || down.contains(n) || matches.contains(n);
             g.setComposite(related ? normal : AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.35f));
             int state = n == selected ? 1 : matches.contains(n) ? 2 : 0;
-            Block.paint(g, n, graph.hasOutput(n), state, Theme.select());
+            Block.paint(g, n, graph.hasOutput(n) || n == graph.groupParent, state, Theme.select());
         }
         g.dispose();
+    }
+
+    /** The frame around a group and the one wire feeding it. */
+    private void paintGroup(Graphics2D g) {
+        Rectangle2D r = null;
+        for (Graph.Node n : graph.nodes) {
+            if (n == graph.groupParent) continue;
+            Rectangle2D nb = new Rectangle2D.Double(n.x, n.y, n.w, Block.H);
+            if (r == null) r = nb; else r.add(nb);
+        }
+        if (r == null) return;
+        double m = 18;
+        java.awt.geom.RoundRectangle2D frame = new java.awt.geom.RoundRectangle2D.Double(
+                r.getX() - m, r.getY() - m, r.getWidth() + 2 * m, r.getHeight() + 2 * m, 22, 22);
+        Color sel = Theme.select();
+        g.setColor(new Color(sel.getRed(), sel.getGreen(), sel.getBlue(), 18));
+        g.fill(frame);
+        g.setColor(new Color(sel.getRed(), sel.getGreen(), sel.getBlue(), 110));
+        g.setStroke(new BasicStroke(1.6f, BasicStroke.CAP_BUTT, BasicStroke.JOIN_ROUND, 1f, new float[]{7f, 5f}, 0f));
+        g.draw(frame);
+        Point a = Block.outPort(graph.groupParent);
+        Point b = new Point((int) Math.round(frame.getCenterX()), (int) Math.round(frame.getY() + Block.PORT_R));
+        g.setColor(Theme.wire());
+        g.setStroke(new BasicStroke(2.2f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+        CubicCurve2D c = curve(a, b);
+        g.draw(c);
+        arrow(g, c);
     }
 
     private static CubicCurve2D curve(Point a, Point b) {

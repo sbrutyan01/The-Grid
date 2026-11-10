@@ -46,16 +46,17 @@ final class Block {
         g.setColor(border);
         g.draw(body);
 
-        g.setFont(TITLE_FONT);
-        g.setColor(new Color(0, 0, 0, 150));
-        g.drawString(n.title, x + 9, y + 15);
-
+        int metaW = 0;
         if (!n.meta.isEmpty()) {
             g.setFont(META_FONT);
             FontMetrics fm = g.getFontMetrics();
+            metaW = fm.stringWidth(n.meta) + 12;
             g.setColor(new Color(0, 0, 0, 130));
             g.drawString(n.meta, x + w - 9 - fm.stringWidth(n.meta), y + 15);
         }
+        g.setFont(TITLE_FONT);
+        g.setColor(new Color(0, 0, 0, 150));
+        g.drawString(ellipsize(n.title, g.getFontMetrics(), w - 18 - metaW), x + 9, y + 15);
 
         if (!n.label.isEmpty()) {
             g.setFont(CODE_FONT);

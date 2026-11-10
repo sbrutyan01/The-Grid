@@ -32,6 +32,10 @@ final class Graph {
     record Edge(Node from, Node to) {}
 
     final List<Node> nodes = new ArrayList<>();
+    int maxPerRow = Integer.MAX_VALUE;   // longer rows wrap onto more lines
+    boolean keepOrder;                   // keep the order nodes were added in (no crossing reduction)
+    Node groupParent;                    // set: every other node sits in one framed group under this node,
+                                         // fed by a single wire, instead of one wire per node
     final List<Edge> edges = new ArrayList<>();
     private final Map<String, Node> byId = new HashMap<>();
 
@@ -139,12 +143,13 @@ final class Graph {
             for (Node s : su.get(n)) min = Math.min(min, s.level);
             n.level = Math.max(0, min - 1);
         }
+        if (groupParent != null) for (Node n : nodes) n.level = n == groupParent ? 0 : 1;
         TreeMap<Integer, List<Node>> rows = new TreeMap<>();
         List<Node> sorted = new ArrayList<>(nodes);
-        sorted.sort(Comparator.comparing(n -> n.id));
+        if (!keepOrder) sorted.sort(Comparator.comparing(n -> n.id));
         for (Node n : sorted) rows.computeIfAbsent(n.level, k -> new ArrayList<>()).add(n);
         renumber(rows);
-        for (int sweep = 0; sweep < 6; sweep++) {
+        for (int sweep = 0; sweep < (keepOrder ? 0 : 6); sweep++) {
             boolean downward = sweep % 2 == 0;
             List<Integer> keys = new ArrayList<>(rows.keySet());
             if (!downward) Collections.reverse(keys);
@@ -160,7 +165,27 @@ final class Graph {
             }
         }
         double y = 0;
-        for (List<Node> row : rows.values()) {
+        if (groupParent != null && rows.size() == 2) {   // a group: aligned columns
+            List<Node> top = rows.firstEntry().getValue(), kids = rows.lastEntry().getValue();
+            int cols = Math.min(maxPerRow, kids.size());
+            double[] colW = new double[cols];
+            for (int i = 0; i < kids.size(); i++) colW[i % cols] = Math.max(colW[i % cols], kids.get(i).w + Block.PAD * 2);
+            double total = -GAP_X;
+            for (double cw : colW) total += cw + GAP_X;
+            for (Node t : top) { t.x = -(t.w + Block.PAD * 2) / 2.0; t.y = 0; }
+            for (int i = 0; i < kids.size(); i++) {
+                Node n = kids.get(i);
+                double x = -total / 2;
+                for (int c = 0; c < i % cols; c++) x += colW[c] + GAP_X;
+                n.w = (int) colW[i % cols] - Block.PAD * 2;   // same width down a column
+                n.x = x;
+                n.y = Block.H + GAP_Y + (i / cols) * (Block.H + GAP_X);
+            }
+            return;
+        }
+        for (List<Node> whole : rows.values()) for (int st = 0; st < whole.size(); st += maxPerRow) {
+            List<Node> row = whole.subList(st, Math.min(whole.size(), st + maxPerRow));
+            if (st > 0 && groupParent != null) y -= GAP_Y - GAP_X;   // wrapped rows of a group sit closer
             double width = -GAP_X;
             for (Node n : row) width += n.w + Block.PAD * 2 + GAP_X;
             double x = -width / 2;
