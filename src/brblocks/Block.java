@@ -38,6 +38,7 @@ final class Block {
         Color border;
         float bw;
         if (state == 1) { border = selectColor; bw = 2.5f; }
+        else if (state == 3) { border = new Color(40, 150, 60); bw = 2.6f; }
         else if (state == 2) { border = new Color(255, 150, 0); bw = 3.5f; }
         else { border = blend(base, Color.BLACK, 0.45f); bw = 1.2f; }
         g.setStroke(n.dashed && state == 0
@@ -61,7 +62,26 @@ final class Block {
         if (!n.label.isEmpty()) {
             g.setFont(CODE_FONT);
             g.setColor(new Color(20, 20, 30));
-            g.drawString(ellipsize(n.label, g.getFontMetrics(), w - 18), x + 9, y + 38);
+            g.drawString(ellipsize(n.label, g.getFontMetrics(), w - 18), x + 9, y + (n.chips.isEmpty() ? 38 : 34));
+        }
+
+        if (!n.chips.isEmpty()) {   // the sub-blocks, small
+            int cw = 9, ch = 5, gap = 2, max = (w - 18 + gap) / (cw + gap);
+            float cx = x + 9;
+            for (int i = 0; i < Math.min(max, n.chips.size()); i++) {
+                Color c = n.chips.get(i);
+                g.setColor(c);
+                g.fill(new RoundRectangle2D.Float(cx, y + H - 11, cw, ch, 3, 3));
+                g.setColor(blend(c, Color.BLACK, 0.4f));
+                g.setStroke(new BasicStroke(0.6f));
+                g.draw(new RoundRectangle2D.Float(cx, y + H - 11, cw, ch, 3, 3));
+                cx += cw + gap;
+            }
+            if (n.chips.size() > max) {
+                g.setFont(META_FONT);
+                g.setColor(new Color(0, 0, 0, 120));
+                g.drawString("+", cx, y + H - 6);
+            }
         }
 
         if (n.hasInput) port(g, inPort(n), Color.WHITE);

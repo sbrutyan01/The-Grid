@@ -197,7 +197,7 @@ final class KernelModel {
         for (Dir d : dirs.values()) d.prompt = prompt(dir.resolve(d.path).resolve("Kconfig"));
     }
 
-    private static String prompt(Path kconfig) {
+    static String prompt(Path kconfig) {
         if (!Files.isRegularFile(kconfig)) return "";
         try {
             List<String> lines = Files.readAllLines(kconfig);

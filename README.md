@@ -28,14 +28,22 @@ Needs Java 17+ (tested on 25). No other dependencies.
 
 <p align="center"><img src="docs/packages.png" width="800" alt="Packages view"></p>
 
-- **Kernel**: what the Linux build compiled, folder by folder (drivers, net, fs, arch, …). Each block
-  shows its Kconfig menu title, how many object files and modules (`.ko`) it produced and the
-  `CONFIG_` option that turns it on. Blue = built into the kernel image, orange = modules only,
-  yellow = both. Double-click a folder to go in (drivers → usb → …), the top block to go back.
-  Read from the kernel build folder: `.config`, the `.o` files, `modules.order`, `built-in.a`,
-  each folder's Makefile and Kconfig.
+- **Kernel**: the Linux sources as blocks inside blocks, marked with what the build compiled.
+  Each folder shows its Kconfig menu title, object and module (`.ko`) counts and the `CONFIG_`
+  option that turns it on. Blue = built into the kernel image, orange = modules only,
+  yellow = both, gray = not built. Files show too (`COMPILED` when a `.o` was made from them).
+- **Sources**: the whole Buildroot tree as blocks. `package/` follows Buildroot's own menus,
+  like `make menuconfig` (Target packages → Audio and video applications → alsa-utils → its
+  files). Packages in this build are blue, and everything the build uses (packages, defconfig,
+  board files, busybox.config…) has a green outline.
 
-<p align="center"><img src="docs/kernel.png" width="800" alt="Kernel view: drivers/"></p>
+In Kernel and Sources, the small chips at the bottom of a block are its sub-blocks. Double-click
+a block to go in, the top block to go back, and a file to read it. **Only what was built** hides
+everything this build did not compile or use.
+
+<p align="center"><img src="docs/kernel.png" width="800" alt="Kernel view: drivers/usb/"></p>
+
+<p align="center"><img src="docs/sources.png" width="800" alt="Sources view: Target packages menu"></p>
 
 Each block shows its build time (from `build/build-time.log`). The panel on the right shows
 version, licenses, dependencies, build steps, sources and so on.
@@ -53,7 +61,7 @@ Mouse wheel zooms, dragging empty space pans, dragging a block moves it. Keys: `
 
 ## Headless PNG
 
-    java -Djava.awt.headless=true -cp classes brblocks.BuildrootBlocks --png out.png [--packages] [--host] [--kernel drivers/usb] <folder>
+    java -Djava.awt.headless=true -cp classes brblocks.BuildrootBlocks --png out.png [--packages] [--host] [--kernel drivers/usb | --sources "package>Target packages"] [--all] <folder>
 
 ## AppImage (Ubuntu and other x86_64 Linux)
 

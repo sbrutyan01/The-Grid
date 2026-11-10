@@ -206,10 +206,13 @@ final class BlockCanvas extends JComponent {
             }
         }
 
+        Rectangle clip = g.getClipBounds();
         for (Graph.Node n : graph.nodes) {
+            if (clip != null && (n.x > clip.getMaxX() || n.x + n.w + 10 < clip.x || n.y > clip.getMaxY()
+                    || n.y + Block.H + 10 < clip.y)) continue;   // off screen
             boolean related = !focus || graph.groupParent != null || n == selected || up.contains(n) || down.contains(n) || matches.contains(n);
             g.setComposite(related ? normal : AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.35f));
-            int state = n == selected ? 1 : matches.contains(n) ? 2 : 0;
+            int state = n == selected ? 1 : matches.contains(n) ? 2 : n.used ? 3 : 0;
             Block.paint(g, n, graph.hasOutput(n) || n == graph.groupParent, state, Theme.select());
         }
         g.dispose();

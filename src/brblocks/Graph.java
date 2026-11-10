@@ -15,6 +15,8 @@ final class Graph {
         boolean dashed;          // virtual packages
         boolean hasInput = true;
         String html = "";        // details panel
+        List<Color> chips = List.of();   // sub-blocks, drawn small inside the block
+        boolean used;            // outlined green: this build uses it
         Runnable open;           // double-click
         BrModel.Pkg pkg;
         double x, y;             // body top-left, diagram units
