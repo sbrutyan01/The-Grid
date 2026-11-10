@@ -2,6 +2,8 @@
 
 # The Grid
 
+*From Code to Blocks*
+
 A Java Swing app that shows a Buildroot build as blocks, in the style of EVIA Paradigma
 (same block shape, colors, ports, wires and dot grid; FlatLaf when the EVIA jar is installed).
 
